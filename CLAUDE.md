@@ -26,6 +26,20 @@ python3 todo.py
 - `todo done <number>` - Mark as complete
 - `todo remove <number>` - Remove a todo
 
+## Testing
+
+```bash
+# Setup (first time)
+python3 -m venv .venv
+.venv/bin/pip install pytest
+
+# Run all tests
+.venv/bin/pytest test_todo.py -v
+
+# Run a single test
+.venv/bin/pytest test_todo.py::TestAddTodo::test_add_simple -v
+```
+
 ## Architecture
 
 - **Storage**: JSON file (`todos.json`) in same directory as script, using `pathlib.Path`
