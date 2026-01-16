@@ -16,6 +16,52 @@ def temp_todo_file(tmp_path, monkeypatch):
     return todo_file
 
 
+class TestNormalizeTodo:
+    def test_valid_todo(self):
+        result = todo._normalize_todo({"task": "Test", "done": False})
+        assert result == {"task": "Test", "done": False}
+
+    def test_valid_todo_with_due(self):
+        result = todo._normalize_todo({"task": "Test", "done": True, "due": "2026-01-15"})
+        assert result == {"task": "Test", "done": True, "due": "2026-01-15"}
+
+    def test_missing_task(self):
+        assert todo._normalize_todo({"done": False}) is None
+
+    def test_empty_task(self):
+        assert todo._normalize_todo({"task": "", "done": False}) is None
+        assert todo._normalize_todo({"task": "   ", "done": False}) is None
+
+    def test_non_string_task(self):
+        assert todo._normalize_todo({"task": 123, "done": False}) is None
+        assert todo._normalize_todo({"task": None, "done": False}) is None
+
+    def test_missing_done_defaults_false(self):
+        result = todo._normalize_todo({"task": "Test"})
+        assert result == {"task": "Test", "done": False}
+
+    def test_done_coerced_to_bool(self):
+        result = todo._normalize_todo({"task": "Test", "done": "yes"})
+        assert result["done"] is True
+        result = todo._normalize_todo({"task": "Test", "done": 0})
+        assert result["done"] is False
+
+    def test_non_dict_returns_none(self):
+        assert todo._normalize_todo("not a dict") is None
+        assert todo._normalize_todo(["task", "done"]) is None
+        assert todo._normalize_todo(None) is None
+
+    def test_empty_due_ignored(self):
+        result = todo._normalize_todo({"task": "Test", "done": False, "due": ""})
+        assert "due" not in result
+        result = todo._normalize_todo({"task": "Test", "done": False, "due": "   "})
+        assert "due" not in result
+
+    def test_extra_fields_stripped(self):
+        result = todo._normalize_todo({"task": "Test", "done": False, "extra": "field"})
+        assert result == {"task": "Test", "done": False}
+
+
 class TestParseDate:
     def test_iso_format(self):
         assert todo.parse_date("2026-01-15") == "2026-01-15"
@@ -61,6 +107,11 @@ class TestFormatDueDate:
         assert "tomorrow" in result
         assert "\033[93m" in result  # yellow color
 
+    def test_invalid_date_format(self):
+        result = todo.format_due_date("not-a-date", False)
+        assert result == " (due: not-a-date)"
+        assert "OVERDUE" not in result
+
 
 class TestLoadSaveTodos:
     def test_load_empty(self, temp_todo_file):
@@ -75,6 +126,34 @@ class TestLoadSaveTodos:
         data = [{"task": "Existing", "done": True}]
         temp_todo_file.write_text(json.dumps(data))
         assert todo.load_todos() == data
+
+    def test_load_corrupt_json(self, temp_todo_file):
+        temp_todo_file.write_text("not valid json {{{")
+        assert todo.load_todos() == []
+
+    def test_load_non_list_json(self, temp_todo_file):
+        temp_todo_file.write_text(json.dumps({"task": "Test", "done": False}))
+        assert todo.load_todos() == []
+
+    def test_load_filters_invalid_items(self, temp_todo_file):
+        data = [
+            {"task": "Valid", "done": False},
+            {"task": "", "done": False},  # empty task
+            "not a dict",
+            {"done": True},  # missing task
+            {"task": "Also valid", "done": True},
+        ]
+        temp_todo_file.write_text(json.dumps(data))
+        result = todo.load_todos()
+        assert len(result) == 2
+        assert result[0]["task"] == "Valid"
+        assert result[1]["task"] == "Also valid"
+
+    def test_load_normalizes_items(self, temp_todo_file):
+        data = [{"task": "Test", "done": "truthy", "extra": "removed"}]
+        temp_todo_file.write_text(json.dumps(data))
+        result = todo.load_todos()
+        assert result == [{"task": "Test", "done": True}]
 
 
 class TestAddTodo:
